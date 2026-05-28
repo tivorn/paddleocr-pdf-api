@@ -29,6 +29,7 @@ DB_PATH = os.environ.get("DB_PATH", "/data/ocr.db")
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/data/uploads")
 DPI = int(os.environ.get("OCR_DPI", "200"))
 API_KEY = os.environ.get("API_KEY", "")
+PIPELINE_VERSION = os.environ.get("OCR_PIPELINE_VERSION", "v1.6")
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -390,8 +391,8 @@ class OCRWorker:
 
     def _load_model(self):
         if self._model is None:
-            print("Loading PaddleOCR-VL model...")
-            self._model = PaddleOCRVL()
+            print(f"Loading PaddleOCR-VL model (pipeline {PIPELINE_VERSION})...")
+            self._model = PaddleOCRVL(pipeline_version=PIPELINE_VERSION)
             print("Model loaded.")
         return self._model
 

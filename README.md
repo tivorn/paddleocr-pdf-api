@@ -6,7 +6,7 @@ A self-hosted PDF OCR API powered by [PaddleOCR](https://github.com/PaddlePaddle
 
 | | |
 |---|---|
-| **Model** | PaddleOCR-VL-1.5 |
+| **Model** | PaddleOCR-VL-1.6 |
 | **Parameters** | 0.9B |
 | **Layout detection** | PP-DocLayoutV3 |
 | **GPU VRAM** | ~8.5GB |
@@ -54,6 +54,35 @@ docker compose up --build -d
 ```
 
 The API will be available at `http://localhost:8099`. On first startup the model (~2GB) is downloaded and loaded into GPU memory. The API accepts requests immediately, but jobs will start processing once the model is ready.
+
+**Baked image (no first-run download):**
+
+For scale-to-zero or cold-start-sensitive deployments, use the `latest-baked` (or `v0.3.0-baked`) tag instead. The model is pre-baked into the image, so the container starts without downloading anything; cold-start warmup is only the model load into GPU memory.  
+
+```yaml
+services:
+  paddleocr:
+    image: edgaras0x4e/paddleocr-pdf-api:latest-baked
+    ports:
+      - "8099:8000"
+    volumes:
+      - ocr-data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  ocr-data:
+```
+
+```bash
+docker compose up -d
+```
 
 ## Usage
 
@@ -294,6 +323,11 @@ The `/data` volume stores the SQLite database and uploaded PDFs. This is a named
 MIT
 
 ## Changelog
+
+### v0.3.0
+
+- Updated the OCR model to PaddleOCR-VL-1.6 (requires `paddleocr` 3.6.0).
+- Added a baked image variant (`:latest-baked` / `:v0.3.0-baked`) with the model pre-baked into the image - no first-run download, for fast cold starts and scale-to-zero deployments.
 
 ### v0.2.0
 
