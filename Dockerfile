@@ -19,10 +19,13 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir "paddlex[ocr]"
 
-COPY api.py .
+COPY app ./app
+
+ENV FLAGS_use_stream_safe_cuda_allocator=false
 
 VOLUME /data
 
 EXPOSE 8000
 
-CMD ["python3", "api.py"]
+ENTRYPOINT []
+CMD ["python3", "-m", "app.api"]

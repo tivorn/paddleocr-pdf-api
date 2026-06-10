@@ -19,12 +19,15 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir "paddlex[ocr]"
 
-COPY api.py .
- 
+COPY app ./app
+
 RUN python3 -c "from paddlex.inference.utils.official_models import official_models; official_models['PaddleOCR-VL-1.6']; official_models['PP-DocLayoutV3']"
+
+ENV FLAGS_use_stream_safe_cuda_allocator=false
 
 VOLUME /data
 
 EXPOSE 8000
 
-CMD ["python3", "api.py"]
+ENTRYPOINT []
+CMD ["python3", "-m", "app.api"]

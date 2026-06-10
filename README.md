@@ -2,6 +2,21 @@
 
 A self-hosted PDF OCR API powered by [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) and the PaddleOCR-VL model. Runs on GPU via Docker, processes PDFs page-by-page, and returns markdown content in JSON responses. Good support (not perfect) for Latvian and Lithuanian languages.
 
+## Contents
+
+- [Model](#model)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Usage](#usage)
+- [API reference](#api-reference)
+- [Configuration](#configuration)
+  - [Database backend](#database-backend)
+  - [Job mode](#job-mode)
+  - [Image descriptions](#image-descriptions)
+  - [API key authentication](#api-key-authentication)
+- [Data persistence](#data-persistence)
+- [Changelog](#changelog)
+
 ## Model
 
 | | |
@@ -19,7 +34,7 @@ A self-hosted PDF OCR API powered by [PaddleOCR](https://github.com/PaddlePaddle
 
 ## Quick start
 
-**Using Docker Hub image:**
+**Using the [Docker Hub image](https://hub.docker.com/r/edgaras0x4e/paddleocr-pdf-api):**
 
 ```yaml
 services:
@@ -55,34 +70,7 @@ docker compose up --build -d
 
 The API will be available at `http://localhost:8099`. On first startup the model (~2GB) is downloaded and loaded into GPU memory. The API accepts requests immediately, but jobs will start processing once the model is ready.
 
-**Baked image (no first-run download):**
-
-For scale-to-zero or cold-start-sensitive deployments, use the `latest-baked` (or `v0.3.0-baked`) tag instead. The model is pre-baked into the image, so the container starts without downloading anything; cold-start warmup is only the model load into GPU memory.  
-
-```yaml
-services:
-  paddleocr:
-    image: edgaras0x4e/paddleocr-pdf-api:latest-baked
-    ports:
-      - "8099:8000"
-    volumes:
-      - ocr-data:/data
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    restart: unless-stopped
-
-volumes:
-  ocr-data:
-```
-
-```bash
-docker compose up -d
-```
+**Baked image (no first-run download):** for scale-to-zero or cold-start-sensitive deployments, change the image tag to `edgaras0x4e/paddleocr-pdf-api:latest-baked`. The model is pre-baked into the image, so the container starts without downloading anything; cold-start warmup is only the model load into GPU memory.
 
 ## Usage
 
@@ -218,10 +206,51 @@ Environment variables set in `docker-compose.yml`:
 |----------|---------|-------------|
 | `API_KEY` | _(empty)_ | Optional API key. When set, all requests must include an `X-API-Key` header |
 | `OCR_DPI` | `200` | DPI for PDF page rendering |
-| `DB_PATH` | `/data/ocr.db` | SQLite database path |
+| `DATABASE_URL` | _(empty)_ | Empty uses SQLite at `DB_PATH`. A `postgresql://...` URL uses PostgreSQL instead. |
+| `RUN_MODE` | `server` | `server` is the always-on API. `job` reads one file from stdin, processes it, and exits. |
+| `DB_PATH` | `/data/ocr.db` | SQLite database path (used when `DATABASE_URL` is empty) |
 | `UPLOAD_DIR` | `/data/uploads` | Upload storage path |
 
-### Image descriptions (optional)
+### Database backend
+
+By default the API stores jobs and results in SQLite at `/data/ocr.db`, persisted on the `/data` volume. No configuration is needed.
+
+To use PostgreSQL instead, set `DATABASE_URL`:
+
+```yaml
+environment:
+  - DATABASE_URL=postgresql://user:password@host:5432/ocr
+```
+
+The schema is created automatically on startup. With PostgreSQL the database is external, so the API is stateless apart from the uploaded files held on `/data` during processing. Multiple server containers can share one PostgreSQL database.
+
+### Job mode
+
+By default the container runs as an always-on server (`RUN_MODE=server`). Set `RUN_MODE=job` to instead process a single file and exit. The file is piped in on stdin; the result is written to the same database as server mode and read back through the API:
+
+```bash
+docker run --rm -i --gpus all \
+  -e RUN_MODE=job \
+  edgaras0x4e/paddleocr-pdf-api:latest < document.pdf
+```
+
+The container reads the file from stdin, runs the same OCR pipeline, saves the result to the database, and exits (`0` on success, non-zero on failure). It does not start the HTTP server. The baked image variant avoids the model download on each run, which suits repeated one-shot jobs.
+
+To keep the result, point the run at a persistent database:
+
+```bash
+# PostgreSQL (external DB, nothing mounted)
+docker run --rm -i --gpus all \
+  -e RUN_MODE=job -e DATABASE_URL=postgresql://user:password@host:5432/ocr \
+  edgaras0x4e/paddleocr-pdf-api:latest-baked < document.pdf
+
+# SQLite (mount the /data volume so the database persists)
+docker run --rm -i --gpus all \
+  -e RUN_MODE=job -v ocr-data:/data \
+  edgaras0x4e/paddleocr-pdf-api:latest-baked < document.pdf
+```
+
+### Image descriptions
 
 When enabled, cropped image regions (photos, charts, seals, logos) detected by the layout model are sent to an OpenAI-compatible vision model, and the returned description is inlined in the page markdown as a `> **[Label]** ...` blockquote. Disabled by default - the original behavior (stripping image tags) is preserved.
 
@@ -258,7 +287,7 @@ environment:
   - IMAGE_DESCRIPTION_PROMPT_CHART="Extract all data points from this chart as a markdown table."
 ```
 
-### Enabling API key authentication
+### API key authentication
 
 Uncomment the environment section in `docker-compose.yml`:
 
@@ -279,50 +308,16 @@ All requests must then include the header:
 curl -H "X-API-Key: your-secret-key" http://localhost:8099/jobs
 ```
 
-## docker-compose.yml
-
-```yaml
-services:
-  paddleocr:
-    build: .
-    ports:
-      - "8099:8000"
-    # environment:
-    #   - API_KEY=your-secret-key
-    volumes:
-      - ocr-data:/data
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    restart: unless-stopped
-
-volumes:
-  ocr-data:
-```
-
-## How it works
-
-1. A PDF is uploaded and saved to disk
-2. A background worker picks up queued jobs in order
-3. Each page is rendered to an image using pypdfium2
-4. PaddleOCR-VL extracts text and converts it to markdown
-5. HTML tags and image placeholders are stripped from the output
-6. Results are stored in SQLite and available per-page as they complete
-7. Jobs interrupted by a restart are automatically re-queued
-
 ## Data persistence
 
-The `/data` volume stores the SQLite database and uploaded PDFs. This is a named Docker volume (`ocr-data`) that persists across container restarts and rebuilds.
-
-## License
-
-MIT
+The `/data` volume stores the SQLite database and uploaded PDFs. This is a named Docker volume (`ocr-data`) that persists across container restarts and rebuilds. When `DATABASE_URL` points at PostgreSQL, the database lives in PostgreSQL and `/data` only holds uploaded files during processing.
 
 ## Changelog
+
+### v0.4.0
+
+- Added an optional PostgreSQL backend, selected with `DATABASE_URL`. SQLite remains default.
+- Added an optional `job` run mode (`RUN_MODE=job`): the container reads a file, processes it, saves the result to the database, and exits.
 
 ### v0.3.0
 
@@ -334,3 +329,7 @@ MIT
 - Accept single image uploads (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`, `.tiff`, `.webp`) as 1-page jobs.
 - Optional image descriptions via OpenAI / Azure OpenAI models.
 - Fixed tables to markdown tables.
+
+## License
+
+MIT

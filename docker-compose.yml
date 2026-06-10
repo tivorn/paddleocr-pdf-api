@@ -5,6 +5,10 @@ services:
       - "8099:8000"
     # environment:
     #   - API_KEY="your-secret-key"
+    #   # Database backend (optional - SQLite by default when DATABASE_URL is unset)
+    #   - DATABASE_URL=postgresql://user:password@host:5432/ocr
+    #   # Run mode (optional - server by default; job drains the queue then exits)
+    #   - RUN_MODE=server                             # server | job
     #   # Image description (optional - disabled by default)
     #   - IMAGE_DESCRIPTION_ENABLED=true
     #   - IMAGE_DESCRIPTION_PROVIDER=azure            # openai | azure
@@ -23,6 +27,10 @@ services:
               count: 1
               capabilities: [gpu]
     restart: unless-stopped
+    # Job mode drains the queue once and exits. Run it as a one-off so the restart
+    # policy above does not relaunch it after a clean exit:
+    #   docker compose run --rm -e RUN_MODE=job paddleocr
+    # On SQLite, run job mode only when no server container is using the same volume.
 
 volumes:
   ocr-data:
