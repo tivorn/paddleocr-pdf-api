@@ -1,10 +1,10 @@
 # Self-Hosted PDF OCR API for Large Documents
 
-A self-hosted PDF OCR API powered by [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) and the PaddleOCR-VL model. Runs on GPU via Docker, processes PDFs page-by-page, and returns markdown content in JSON responses. Good support (not perfect) for Latvian and Lithuanian languages.
+A self-hosted PDF OCR API powered by [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) models (PaddleOCR-VL by default). Runs via Docker, processes PDFs page-by-page, and returns markdown content in JSON responses. Good support (not perfect) for Latvian and Lithuanian languages.
 
 ## Contents
 
-- [Model](#model)
+- [OCR engines](#ocr-engines)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Usage](#usage)
@@ -17,20 +17,38 @@ A self-hosted PDF OCR API powered by [PaddleOCR](https://github.com/PaddlePaddle
 - [Data persistence](#data-persistence)
 - [Changelog](#changelog)
 
-## Model
+## OCR engines
 
-| | |
-|---|---|
-| **Model** | PaddleOCR-VL-1.6 |
-| **Parameters** | 0.9B |
-| **Layout detection** | PP-DocLayoutV3 |
-| **GPU VRAM** | ~8.5GB |
-| **Input formats** | PDF, PNG, JPG, JPEG, BMP, TIFF, WEBP |
+The API runs one of three OCR engines, selected with the `OCR_ENGINE` variable. All engines share the same API and job flow:
+
+| `OCR_ENGINE` | Models | Output | Hardware |
+|---|---|---|---|
+| `vl` (default) | PaddleOCR-VL-1.6 (0.9B) + PP-DocLayoutV3 | Markdown, full document understanding | GPU, ~8.5GB VRAM |
+| `text` | PP-OCRv5 server detection + recognition | Plain text lines, no layout markup | GPU or CPU |
+| `structure` | PP-StructureV3 layout parsing (tables, formulas, reading order), no VLM | Markdown | GPU, ~10.5GB VRAM |
+
+All engines accept the same input formats: PDF, PNG, JPG, JPEG, BMP, TIFF, WEBP.
+
+Each engine has its own baked image (models included, no first-run download):
+
+| Image tag | Engine | Runs on |
+|---|---|---|
+| `latest-vl-baked` | `vl` | GPU |
+| `latest-structure-baked` | `structure` | GPU |
+| `latest-text-baked` | `text` | CPU |
+
+Baked images preselect their engine, so `OCR_ENGINE` does not need to be set. The non-baked `latest` image is GPU-based and works with any engine; it downloads the selected engine's models at runtime.
 
 ## Requirements
 
-- Docker with [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-- NVIDIA GPU with ~8.5GB VRAM
+Every image needs Docker. The GPU images also need the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) and an NVIDIA GPU:
+
+| Image | Needs |
+|---|---|
+| `latest` | Docker + NVIDIA GPU (for `vl` engine) |
+| `latest-vl-baked` | Docker + NVIDIA GPU (~8.5GB VRAM) |
+| `latest-structure-baked` | Docker + NVIDIA GPU (~10.5GB VRAM) |
+| `latest-text-baked` | Docker |
 
 ## Quick start
 
@@ -42,6 +60,8 @@ services:
     image: edgaras0x4e/paddleocr-pdf-api:latest
     ports:
       - "8099:8000"
+    environment:
+      - OCR_ENGINE=vl              # or text, or structure
     volumes:
       - ocr-data:/data
     deploy:
@@ -70,7 +90,7 @@ docker compose up --build -d
 
 The API will be available at `http://localhost:8099`. On first startup the model (~2GB) is downloaded and loaded into GPU memory. The API accepts requests immediately, but jobs will start processing once the model is ready.
 
-**Baked image (no first-run download):** for scale-to-zero or cold-start-sensitive deployments, change the image tag to `edgaras0x4e/paddleocr-pdf-api:latest-baked`. The model is pre-baked into the image, so the container starts without downloading anything; cold-start warmup is only the model load into GPU memory.
+**Baked images (no first-run download):** for scale-to-zero or cold-start-sensitive deployments, use your engine's baked tag instead (see [OCR engines](#ocr-engines)). The models are pre-baked into the image, so the container starts without downloading anything; cold-start warmup is only the model load into memory.
 
 ## Usage
 
@@ -205,7 +225,9 @@ Environment variables set in `docker-compose.yml`:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `API_KEY` | _(empty)_ | Optional API key. When set, all requests must include an `X-API-Key` header |
+| `OCR_ENGINE` | `vl` | OCR engine: `vl`, `text`, or `structure` (see [OCR engines](#ocr-engines)) |
 | `OCR_DPI` | `200` | DPI for PDF page rendering |
+| `OCR_MARKDOWN_IGNORE_LABELS` | `number, footnote, header, header_image, footer, footer_image, aside_text` | Comma-separated layout labels dropped from the markdown (`vl` and `structure` engines). |
 | `DATABASE_URL` | _(empty)_ | Empty uses SQLite at `DB_PATH`. A `postgresql://...` URL uses PostgreSQL instead. |
 | `RUN_MODE` | `server` | `server` is the always-on API. `job` reads one file from stdin, processes it, and exits. |
 | `DB_PATH` | `/data/ocr.db` | SQLite database path (used when `DATABASE_URL` is empty) |
@@ -242,12 +264,12 @@ To keep the result, point the run at a persistent database:
 # PostgreSQL (external DB, nothing mounted)
 docker run --rm -i --gpus all \
   -e RUN_MODE=job -e DATABASE_URL=postgresql://user:password@host:5432/ocr \
-  edgaras0x4e/paddleocr-pdf-api:latest-baked < document.pdf
+  edgaras0x4e/paddleocr-pdf-api:latest-vl-baked < document.pdf
 
 # SQLite (mount the /data volume so the database persists)
 docker run --rm -i --gpus all \
   -e RUN_MODE=job -v ocr-data:/data \
-  edgaras0x4e/paddleocr-pdf-api:latest-baked < document.pdf
+  edgaras0x4e/paddleocr-pdf-api:latest-vl-baked < document.pdf
 ```
 
 ### Image descriptions
@@ -262,7 +284,7 @@ When enabled, cropped image regions (photos, charts, seals, logos) detected by t
 | `IMAGE_DESCRIPTION_API_KEY` | _(empty)_ | Bearer / API key. Local backends accept any placeholder. |
 | `IMAGE_DESCRIPTION_API_VERSION` | _(empty)_ | Azure-only, e.g. `2025-01-01-preview` (chat) or `2025-04-01-preview` (responses). |
 | `IMAGE_DESCRIPTION_API_MODE` | `chat_completions` | `chat_completions` (universal) or `responses` (OpenAI-native / Azure). |
-| `IMAGE_DESCRIPTION_MODEL` | `gpt-5.4` | Model name (or Azure deployment name). |
+| `IMAGE_DESCRIPTION_MODEL` | `gpt-5.5` | Model name (or Azure deployment name). |
 | `IMAGE_DESCRIPTION_PROMPT` | _built-in neutral prompt_ | Default prompt used when no per-label override is set. |
 | `IMAGE_DESCRIPTION_PROMPT_<LABEL>` | _(empty)_ | Per-label override, e.g. `IMAGE_DESCRIPTION_PROMPT_CHART="Extract numeric data as a markdown table."`. Label is the uppercase `block_label` (`IMAGE`, `CHART`, `SEAL`, `HEADER_IMAGE`, `FOOTER_IMAGE`). |
 | `IMAGE_DESCRIPTION_LABELS` | `image,chart,seal,header_image,footer_image` | Comma-separated labels to describe. `table` and `formula` are always skipped (PaddleOCR renders them natively). |
@@ -282,7 +304,7 @@ environment:
   - IMAGE_DESCRIPTION_API_URL="https://<your-resource>.cognitiveservices.azure.com"
   - IMAGE_DESCRIPTION_API_VERSION="2025-04-01-preview"
   - IMAGE_DESCRIPTION_API_MODE=responses
-  - IMAGE_DESCRIPTION_MODEL="gpt-5.4"
+  - IMAGE_DESCRIPTION_MODEL="gpt-5.5"
   - IMAGE_DESCRIPTION_API_KEY="<your-key>"
   - IMAGE_DESCRIPTION_PROMPT_CHART="Extract all data points from this chart as a markdown table."
 ```
@@ -313,6 +335,12 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8099/jobs
 The `/data` volume stores the SQLite database and uploaded PDFs. This is a named Docker volume (`ocr-data`) that persists across container restarts and rebuilds. When `DATABASE_URL` points at PostgreSQL, the database lives in PostgreSQL and `/data` only holds uploaded files during processing.
 
 ## Changelog
+
+### v0.4.1
+
+- Added `OCR_MARKDOWN_IGNORE_LABELS` to control which layout labels are dropped from the markdown output. ([#1](https://github.com/Edgaras0x4E/paddleocr-pdf-api/issues/1))
+- Added `OCR_ENGINE` to select the OCR engine: `vl` (default), `text`, or `structure`, each with its own baked image. ([#1](https://github.com/Edgaras0x4E/paddleocr-pdf-api/issues/1))
+- Renamed the baked image to `:latest-vl-baked` / `:v0.4.1-vl-baked` (was `:latest-baked` / `:v0.4.0-baked`); `latest-baked` remains an alias.
 
 ### v0.4.0
 

@@ -1,0 +1,35 @@
+FROM nvcr.io/nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV DISABLE_MODEL_SOURCE_CHECK=True
+ENV PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev \
+    libgl1-mesa-glx libglib2.0-0 libgomp1 libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN pip3 install --no-cache-dir paddlepaddle-gpu==3.2.2 \
+    --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir "paddlex[ocr]"
+
+COPY app ./app
+
+RUN python3 -c "from paddlex.inference.utils.official_models import official_models; [official_models[m] for m in ['PP-DocLayout_plus-L', 'PP-DocBlockLayout', 'PP-Chart2Table', 'PP-LCNet_x1_0_doc_ori', 'UVDoc', 'PP-OCRv5_server_det', 'PP-OCRv5_server_rec', 'PP-LCNet_x1_0_textline_ori', 'PP-LCNet_x1_0_table_cls', 'SLANeXt_wired', 'SLANet_plus', 'RT-DETR-L_wired_table_cell_det', 'RT-DETR-L_wireless_table_cell_det', 'PP-OCRv4_server_seal_det', 'PP-FormulaNet_plus-L']]"
+
+ENV OCR_ENGINE=structure
+
+ENV FLAGS_use_stream_safe_cuda_allocator=false
+
+VOLUME /data
+
+EXPOSE 8000
+
+ENTRYPOINT []
+CMD ["python3", "-m", "app.api"]

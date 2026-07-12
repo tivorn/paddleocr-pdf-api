@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -12,8 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-RUN pip3 install --no-cache-dir paddlepaddle-gpu==3.2.2 \
-    --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+RUN pip3 install --no-cache-dir paddlepaddle==3.2.2
 
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt && \
@@ -21,9 +20,9 @@ RUN pip3 install --no-cache-dir -r requirements.txt && \
 
 COPY app ./app
 
-RUN python3 -c "from paddlex.inference.utils.official_models import official_models; official_models['PaddleOCR-VL-1.6']; official_models['PP-DocLayoutV3']"
+RUN python3 -c "from paddlex.inference.utils.official_models import official_models; [official_models[m] for m in ['PP-OCRv5_server_det', 'PP-OCRv5_server_rec', 'PP-LCNet_x1_0_textline_ori', 'PP-LCNet_x1_0_doc_ori', 'UVDoc']]"
 
-ENV FLAGS_use_stream_safe_cuda_allocator=false
+ENV OCR_ENGINE=text
 
 VOLUME /data
 

@@ -19,6 +19,18 @@ DPI = int(os.environ.get("OCR_DPI", "200"))
 API_KEY = os.environ.get("API_KEY", "")
 PIPELINE_VERSION = os.environ.get("OCR_PIPELINE_VERSION", "v1.6")
 
+_MARKDOWN_IGNORE_LABELS_RAW = os.environ.get("OCR_MARKDOWN_IGNORE_LABELS")
+MARKDOWN_IGNORE_LABELS = (
+    None
+    if _MARKDOWN_IGNORE_LABELS_RAW is None
+    else [lbl.strip().lower() for lbl in _MARKDOWN_IGNORE_LABELS_RAW.split(",") if lbl.strip()]
+)
+
+OCR_ENGINE = os.environ.get("OCR_ENGINE", "vl").strip().lower()
+OCR_ENGINES = {"vl", "text", "structure"}
+if OCR_ENGINE not in OCR_ENGINES:
+    raise ValueError(f"Invalid OCR_ENGINE '{OCR_ENGINE}'. Valid values: {sorted(OCR_ENGINES)}")
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     val = os.environ.get(name)
@@ -33,7 +45,7 @@ IMAGE_DESCRIPTION_API_URL = os.environ.get("IMAGE_DESCRIPTION_API_URL", "https:/
 IMAGE_DESCRIPTION_API_KEY = os.environ.get("IMAGE_DESCRIPTION_API_KEY", "")
 IMAGE_DESCRIPTION_API_VERSION = os.environ.get("IMAGE_DESCRIPTION_API_VERSION", "")
 IMAGE_DESCRIPTION_API_MODE = os.environ.get("IMAGE_DESCRIPTION_API_MODE", "chat_completions").lower()
-IMAGE_DESCRIPTION_MODEL = os.environ.get("IMAGE_DESCRIPTION_MODEL", "gpt-5.4")
+IMAGE_DESCRIPTION_MODEL = os.environ.get("IMAGE_DESCRIPTION_MODEL", "gpt-5.5")
 IMAGE_DESCRIPTION_DEFAULT_PROMPT = os.environ.get(
     "IMAGE_DESCRIPTION_PROMPT",
     "Describe this image from a document concisely. Focus on content relevant to "

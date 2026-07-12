@@ -9,14 +9,18 @@ services:
     #   - DATABASE_URL=postgresql://user:password@host:5432/ocr
     #   # Run mode (optional - server by default; job drains the queue then exits)
     #   - RUN_MODE=server                             # server | job
+    #   # OCR engine (optional - vl by default). text runs on GPU here; the CPU-only text image is latest-text-baked.
+    #   - OCR_ENGINE=vl                               # vl | text | structure
+    #   # Markdown labels dropped from output (optional - default drops headers/footers/page numbers; remove header,footer to keep them). Applies to vl and structure engines.
+    #   - OCR_MARKDOWN_IGNORE_LABELS=number,footnote,header,header_image,footer,footer_image,aside_text
     #   # Image description (optional - disabled by default)
     #   - IMAGE_DESCRIPTION_ENABLED=true
     #   - IMAGE_DESCRIPTION_PROVIDER=azure            # openai | azure
     #   - IMAGE_DESCRIPTION_API_URL="https://<your-resource>.cognitiveservices.azure.com"
     #   - IMAGE_DESCRIPTION_API_VERSION="2025-04-01-preview"
     #   - IMAGE_DESCRIPTION_API_MODE=responses        # chat_completions | responses
-    #   - IMAGE_DESCRIPTION_MODEL="gpt-5.4"
-    #   - IMAGE_DESCRIPTION_API_KEY="your-vision-key"
+    #   - IMAGE_DESCRIPTION_MODEL="gpt-5.5"
+    #   - IMAGE_DESCRIPTION_API_KEY="your-api-key"
     volumes:
       - ocr-data:/data
     deploy:

@@ -2,8 +2,8 @@ services:
   paddleocr:
     build:
       context: .
-      dockerfile: Dockerfile.baked
-    image: edgaras0x4e/paddleocr-pdf-api:latest-baked
+      dockerfile: Dockerfile.vl-baked
+    image: edgaras0x4e/paddleocr-pdf-api:latest-vl-baked
     ports:
       - "8099:8000"
     # environment:
@@ -12,14 +12,16 @@ services:
     #   - DATABASE_URL=postgresql://user:password@host:5432/ocr
     #   # Run mode (optional - server by default; job drains the queue then exits)
     #   - RUN_MODE=server                             # server | job
+    #   # Markdown labels dropped from output (optional - default drops headers/footers/page numbers; remove header,footer to keep them). Applies to vl and structure engines.
+    #   - OCR_MARKDOWN_IGNORE_LABELS=number,footnote,header,header_image,footer,footer_image,aside_text
     #   # Image description (optional - disabled by default)
     #   - IMAGE_DESCRIPTION_ENABLED=true
     #   - IMAGE_DESCRIPTION_PROVIDER=azure            # openai | azure
     #   - IMAGE_DESCRIPTION_API_URL="https://<your-resource>.cognitiveservices.azure.com"
     #   - IMAGE_DESCRIPTION_API_VERSION="2025-04-01-preview"
     #   - IMAGE_DESCRIPTION_API_MODE=responses        # chat_completions | responses
-    #   - IMAGE_DESCRIPTION_MODEL="gpt-5.4"
-    #   - IMAGE_DESCRIPTION_API_KEY="your-vision-key"
+    #   - IMAGE_DESCRIPTION_MODEL="gpt-5.5"
+    #   - IMAGE_DESCRIPTION_API_KEY="your-api-key"
     volumes:
       - ocr-data:/data
     deploy:
@@ -34,6 +36,37 @@ services:
     # policy above does not relaunch it after a clean exit:
     #   docker compose -f docker-compose.baked.yml run --rm -e RUN_MODE=job paddleocr
     # On SQLite, run job mode only when no server container is using the same volume.
+
+  # Structure engine (GPU):
+  # paddleocr:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.structure-baked
+  #   image: edgaras0x4e/paddleocr-pdf-api:latest-structure-baked
+  #   ports:
+  #     - "8099:8000"
+  #   volumes:
+  #     - ocr-data:/data
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   restart: unless-stopped
+
+  # Text engine (CPU):
+  # paddleocr:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.text-baked
+  #   image: edgaras0x4e/paddleocr-pdf-api:latest-text-baked
+  #   ports:
+  #     - "8099:8000"
+  #   volumes:
+  #     - ocr-data:/data
+  #   restart: unless-stopped
 
 volumes:
   ocr-data:

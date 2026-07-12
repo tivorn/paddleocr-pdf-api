@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 from PIL import Image
-from paddleocr import PaddleOCRVL
+from paddleocr import PaddleOCR, PaddleOCRVL, PPStructureV3
 
 from app import config
 from app import db
@@ -46,8 +46,19 @@ class OCRWorker:
 
     def _load_model(self):
         if self._model is None:
-            print(f"Loading PaddleOCR-VL model (pipeline {config.PIPELINE_VERSION})...")
-            self._model = PaddleOCRVL(pipeline_version=config.PIPELINE_VERSION)
+            engine = config.OCR_ENGINE
+            print(f"Loading OCR engine '{engine}'...")
+            if engine == "vl":
+                self._model = PaddleOCRVL(
+                    pipeline_version=config.PIPELINE_VERSION,
+                    markdown_ignore_labels=config.MARKDOWN_IGNORE_LABELS,
+                )
+            elif engine == "structure":
+                self._model = PPStructureV3(
+                    markdown_ignore_labels=config.MARKDOWN_IGNORE_LABELS,
+                )
+            else:
+                self._model = PaddleOCR()
             print("Model loaded.")
         return self._model
 
@@ -323,29 +334,10 @@ class OCRWorker:
 
             try:
                 result = ocr.predict(input=tmp_path)
-
-                markdown_parts = []
-                for res in result:
-                    md_data = res._to_markdown(pretty=False)
-                    if isinstance(md_data, dict):
-                        text = md_data.get("markdown_texts") or md_data.get("markdown") or ""
-                        images = md_data.get("markdown_images") or {}
-                        if text:
-                            if config.IMAGE_DESCRIPTION_ENABLED and images:
-                                text = describe_images(
-                                    text, images,
-                                    page_num=page_num, job_id=job_id,
-                                )
-                            else:
-                                text = strip_image_tags(text)
-                            markdown_parts.append(text)
-
-                if not markdown_parts:
-                    markdown_parts = [self._extract_text(result)]
-
-                page_markdown = "\n\n".join(markdown_parts)
-                page_markdown = convert_html_tables(page_markdown)
-                page_markdown = strip_html(page_markdown)
+                if config.OCR_ENGINE == "text":
+                    page_markdown = self._text_lines(result)
+                else:
+                    page_markdown = self._markdown_text(result, page_num, job_id)
 
                 cancel_requested = self._write_page(job_id, page_num, page_markdown)
                 print(f"[{job_id[:8]}] Page {page_num}/{total_pages} done")
@@ -373,3 +365,36 @@ class OCRWorker:
             else:
                 texts.append(str(res))
         return "\n".join(texts)
+
+    def _markdown_text(self, result, page_num, job_id):
+        markdown_parts = []
+        for res in result:
+            md_data = res._to_markdown(pretty=False)
+            if isinstance(md_data, dict):
+                text = md_data.get("markdown_texts") or md_data.get("markdown") or ""
+                images = md_data.get("markdown_images") or {}
+                if text:
+                    if config.IMAGE_DESCRIPTION_ENABLED and images:
+                        text = describe_images(
+                            text, images,
+                            page_num=page_num, job_id=job_id,
+                        )
+                    else:
+                        text = strip_image_tags(text)
+                    markdown_parts.append(text)
+
+        if not markdown_parts:
+            markdown_parts = [self._extract_text(result)]
+
+        page_markdown = "\n\n".join(markdown_parts)
+        page_markdown = convert_html_tables(page_markdown)
+        page_markdown = strip_html(page_markdown)
+        return page_markdown
+
+    def _text_lines(self, result):
+        parts = []
+        for res in result:
+            lines = res.get("rec_texts") or []
+            if lines:
+                parts.append("\n".join(lines))
+        return "\n\n".join(parts)
