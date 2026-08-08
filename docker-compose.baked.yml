@@ -2,8 +2,8 @@ services:
   paddleocr:
     build:
       context: .
-      dockerfile: Dockerfile.vl-baked
-    image: edgaras0x4e/paddleocr-pdf-api:latest-vl-baked
+      dockerfile: Dockerfile.text-baked
+    image: dgaras0x4e/paddleocr-pdf-api:latest-text-baked
     ports:
       - "8099:8000"
     # environment:
@@ -24,13 +24,13 @@ services:
     #   - IMAGE_DESCRIPTION_API_KEY="your-api-key"
     volumes:
       - ocr-data:/data
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    #deploy:
+    #  resources:
+    #    reservations:
+    #      devices:
+    #        - driver: nvidia
+    #          count: 1
+    #          capabilities: [gpu]
     restart: unless-stopped
     # Job mode drains the queue once and exits. Run it as a one-off so the restart
     # policy above does not relaunch it after a clean exit:
